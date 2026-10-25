@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>samp-cef CEF 150 smoke test</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 28px; background: #10131a; color: #edf2f7; }
+    main { max-width: 920px; margin: auto; padding: 24px; border: 2px solid #5eead4; border-radius: 16px; background: #171c26; }
+    h1 { margin-top: 0; color: #5eead4; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .result { padding: 10px 12px; border-radius: 8px; background: #242b39; }
+    .pass { border-left: 5px solid #22c55e; }
+    .fail { border-left: 5px solid #ef4444; }
+    .expected { border-left: 5px solid #f59e0b; }
+    video { width: 320px; max-width: 100%; margin-top: 16px; background: black; }
+    input, button { font: inherit; padding: 9px 12px; margin: 12px 8px 0 0; }
+    #pulse { width: 24px; height: 24px; margin-top: 16px; border-radius: 50%; background: #5eead4; animation: pulse 1s ease-in-out infinite alternate; }
+    @keyframes pulse { to { transform: translateX(220px); background: #a78bfa; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CEF 150 client smoke test</h1>
+    <div class="grid" id="results"></div>
+    <input id="typing" placeholder="Keyboard input test">
+    <button id="emit">Show object texture</button>
+    <button id="focus">Release focus</button>
+    <button id="double-click">Double-click test</button>
+    <div id="pulse" title="OSR animation"></div>
+    <video id="webm" controls autoplay loop muted src="bear-vp9-opus.webm"></video>
+    <video id="h264" hidden src="bear-h264-aac.mp4"></video>
+  </main>
+  <script>
+    const results = document.getElementById("results");
+    function report(name, ok, detail, expected = false) {
+      let row = document.getElementById(`result-${name}`);
+      if (!row) {
+        row = document.createElement("div");
+        row.id = `result-${name}`;
+        row.className = "result";
+        results.append(row);
+      }
+      row.className = `result ${expected ? "expected" : ok ? "pass" : "fail"}`;
+      row.textContent = `${name}: ${detail}`;
+    }
+
+    report("CEF JS API", typeof window.cef === "object", window.cef?.version ?? "missing");
+    const webmType = document.createElement("video").canPlayType('video/webm; codecs="vp9, opus"');
+    const h264Type = document.createElement("video").canPlayType('video/mp4; codecs="avc1.64001f, mp4a.40.2"');
+    report("VP9 + Opus", Boolean(webmType), webmType || "unsupported");
+    report("H.264 + AAC", !h264Type, h264Type || "unsupported as expected", true);
+
+    const video = document.getElementById("webm");
+    video.volume = 0.15;
+    video.addEventListener("playing", () => report("WebM playback", true, `${video.videoWidth}x${video.videoHeight}`));
+    video.addEventListener("error", () => report("WebM playback", false, `media error ${video.error?.code ?? "unknown"}`));
+    video.play().catch((error) => report("WebM playback", false, error.message));
+
+    const h264 = document.getElementById("h264");
+    h264.addEventListener("playing", () => report("H.264 playback", false, "unexpectedly playable", true));
+    h264.addEventListener("error", () => report("H.264 playback", true, "unsupported as expected", true));
+    h264.play().catch(() => report("H.264 playback", true, "unsupported as expected", true));
+
+    report("HTTP fetch", false, "pending");
+    const httpTimeout = AbortSignal.timeout(5000);
+    fetch("http://127.0.0.1:18080/probe", { cache: "no-store", signal: httpTimeout })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((value) => report("HTTP fetch", value.ok === true, JSON.stringify(value)))
+      .catch((error) => report("HTTP fetch", false, error.message));
+
+    if (window.cef) {
+      cef.on("smoke:server", (message) => report("JS IPC round trip", message === "pong", String(message)));
+      cef.emit("smoke:client", "ready");
+    }
+
+    document.getElementById("emit").addEventListener("click", () => cef?.emit("smoke:client", "button"));
+    document.getElementById("focus").addEventListener("click", () => cef?.set_focus(false));
+    const doubleClick = document.getElementById("double-click");
+    report("Double-click", false, "pending");
+    doubleClick.addEventListener("dblclick", (event) => report("Double-click", true, `detail=${event.detail}`));
+    document.getElementById("typing").addEventListener("input", (event) => report("Keyboard input", true, event.target.value));
+  </script>
+</body>
+</html>

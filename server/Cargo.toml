@@ -1,0 +1,15 @@
+[package]
+name = "cef-server"
+version = "0.1.0"
+authors = ["ZOTTCE <zottce@gmail.com>"]
+edition = "2024"
+rust-version = "1.93"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { git = "https://github.com/zottce/samp-rs.git", rev = "2e9192713bf9a77ee04e0ebbcda37d078c9c47dd", features = ["encoding"] }
+server-core = { path = "../server-core", package = "cef-server-core" }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "smallvec"] }

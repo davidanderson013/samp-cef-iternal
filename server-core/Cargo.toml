@@ -1,0 +1,14 @@
+[package]
+name = "cef-server-core"
+version = "0.1.0"
+authors = ["ZOTTCE <zottce@gmail.com>"]
+edition = "2024"
+rust-version = "1.93"
+
+[dependencies]
+crossbeam-channel = "0.5.15"
+tracing = "0.1.44"
+messages = { path = "../messages", package = "cef-messages" }
+network = { path = "../network", package = "cef-network" }
+quick-protobuf = "0.8.1"
+sha2 = "0.10"

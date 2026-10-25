@@ -1,0 +1,263 @@
+name: make-package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_server_ubuntu:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-25.10, ubuntu-25.04, ubuntu-24.04]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable + i686 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: i686-unknown-linux-gnu
+
+      - name: Install build deps
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git g++-multilib
+
+      - name: Checkout open.mp
+        uses: actions/checkout@v4
+        with:
+          repository: openmultiplayer/open.mp
+          path: open.mp
+
+      - name: Checkout open.mp SDK submodules
+        run: git -C open.mp submodule update --init --recursive SDK lib/pawn
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ matrix.os }}-i686-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ matrix.os }}-i686-unknown-linux-gnu-
+            cargo-registry-${{ runner.os }}-${{ matrix.os }}-
+
+      - name: Cache target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/target
+          key: cargo-target-${{ runner.os }}-${{ matrix.os }}-i686-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-${{ matrix.os }}-i686-unknown-linux-gnu-
+            cargo-target-${{ runner.os }}-${{ matrix.os }}-
+
+      - name: Build server plugin
+        run: |
+          cargo build --package cef-server --release --target i686-unknown-linux-gnu
+          strip -s target/i686-unknown-linux-gnu/release/libcef_server.so -o cef-samp.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-${{ matrix.os }}.so
+          path: cef-samp.so
+
+      - name: Build open.mp component
+        run: |
+          scripts/build-openmp-component.sh \
+            --openmp-root "$GITHUB_WORKSPACE/open.mp" \
+            --build-dir "$GITHUB_WORKSPACE/target/openmp-component-build-${{ matrix.os }}" \
+            --jobs 2
+          strip -s "target/openmp-component-build-${{ matrix.os }}/cef.so" -o cef-openmp.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-openmp-${{ matrix.os }}.so
+          path: cef-openmp.so
+
+  build_server_debian:
+    runs-on: ubuntu-latest
+    container: debian:${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [12, 13]
+
+    steps:
+      - name: Install build deps
+        run: |
+          dpkg --add-architecture i386
+          apt-get update
+          apt-get install -y build-essential ca-certificates cmake curl git make g++-multilib
+
+      - name: Install stable + i686 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: i686-unknown-linux-gnu
+
+      - uses: actions/checkout@v4
+
+      - name: Checkout open.mp
+        uses: actions/checkout@v4
+        with:
+          repository: openmultiplayer/open.mp
+          path: open.mp
+
+      - name: Checkout open.mp SDK submodules
+        run: git -C open.mp submodule update --init --recursive SDK lib/pawn
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-debian${{ matrix.os }}-i686-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-debian${{ matrix.os }}-i686-unknown-linux-gnu-
+            cargo-registry-${{ runner.os }}-debian${{ matrix.os }}-
+
+      - name: Cache target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/target
+          key: cargo-target-${{ runner.os }}-debian${{ matrix.os }}-i686-unknown-linux-gnu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-debian${{ matrix.os }}-i686-unknown-linux-gnu-
+            cargo-target-${{ runner.os }}-debian${{ matrix.os }}-
+
+      - name: Build server plugin
+        run: |
+          cargo build --package cef-server --release --target i686-unknown-linux-gnu
+          strip -s target/i686-unknown-linux-gnu/release/libcef_server.so -o cef-samp.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-debian-${{ matrix.os }}.so
+          path: cef-samp.so
+
+      - name: Build open.mp component
+        run: |
+          scripts/build-openmp-component.sh \
+            --openmp-root "$GITHUB_WORKSPACE/open.mp" \
+            --build-dir "$GITHUB_WORKSPACE/target/openmp-component-build-debian-${{ matrix.os }}" \
+            --jobs 2
+          strip -s "target/openmp-component-build-debian-${{ matrix.os }}/cef.so" -o cef-openmp.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-openmp-debian-${{ matrix.os }}.so
+          path: cef-openmp.so
+
+  build_client:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configuration
+        run: |
+          Write-Output "DX_SDK_DIR=${env:TEMP}/dxsdk" >> ${env:GITHUB_ENV}
+          Write-Output "DX_SDK=${env:TEMP}/dxsdk/Lib/x86" >> ${env:GITHUB_ENV}
+          Write-Output "CEF_PATH=${env:TEMP}/cef" >> ${env:GITHUB_ENV}
+
+      - name: DirectX SDK cache
+        id: dx-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DX_SDK_DIR }}
+          key: directx
+
+      - name: CEF static library cache
+        id: cef-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CEF_PATH }}
+          key: cef-windows32-${{ hashFiles('cef-distribution.json') }}
+
+      - name: Install DirectX SDK
+        if: steps.dx-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -L https://download.microsoft.com/download/a/e/7/ae743f1f-632b-4809-87a9-aa1bb3458e31/DXSDK_Jun10.exe -o _DX2010_.exe
+          7z x _DX2010_.exe DXSDK/Lib/x86 -o_DX2010_
+          mv _DX2010_/DXSDK $DX_SDK_DIR
+          rm -fR _DX*_ _DX*_.exe
+        shell: bash
+
+      - name: Download CEF distribution
+        if: steps.cef-cache.outputs.cache-hit != 'true'
+        run: node scripts/download-cef.mjs --output "$CEF_PATH"
+        shell: bash
+
+      - name: Install stable + i686 target (MSVC)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: i686-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-i686-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-i686-pc-windows-msvc-
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/target
+          key: cargo-target-${{ runner.os }}-i686-pc-windows-msvc-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-i686-pc-windows-msvc-
+            cargo-target-${{ runner.os }}-
+
+      - name: Build client (i686)
+        run: cargo build --release --target i686-pc-windows-msvc
+        shell: bash
+
+      - name: Make a package
+        run: |
+          node scripts/package-client.mjs --cef "$CEF_PATH" --output redist
+          cd redist
+          7z a -tzip cef.zip cef.asi cef package-manifest.json
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-client.dll
+          path: target/i686-pc-windows-msvc/release/cef_client.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-renderer.exe
+          path: target/i686-pc-windows-msvc/release/cef-renderer.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef.asi
+          path: target/i686-pc-windows-msvc/release/cef_loader.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-windows.dll
+          path: target/i686-pc-windows-msvc/release/cef_server.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef.zip
+          path: redist/cef.zip
