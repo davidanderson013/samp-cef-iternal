@@ -70,7 +70,7 @@ impl AssetBundle {
         let index_nonce = &raw[4..16];
         let index_len = u32::from_le_bytes(raw[16..20].try_into().unwrap()) as usize;
 
-        let index_start = 20;
+        let index_start: usize = 20;
         let index_end = index_start
             .checked_add(index_len)
             .ok_or("index_len overflow")?;
