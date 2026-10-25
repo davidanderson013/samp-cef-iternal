@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = [
+    "cef-sys",
+    "cef",
+    "loader",
+    "client",
+    "renderer",
+    "messages",
+    "server-core",
+    "server",
+    "openmp-component",
+    "cef-api",
+    "cef-interface",
+    "network",
+]
+
+
+[profile.release]
+# lto = true
+opt-level = "z"

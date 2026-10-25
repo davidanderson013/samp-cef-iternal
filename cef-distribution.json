@@ -1,0 +1,16 @@
+{
+  "cefVersion": "150.0.11+gb887805+chromium-150.0.7871.115",
+  "chromiumVersion": "150.0.7871.115",
+  "branch": 7871,
+  "apiVersion": 15000,
+  "apiHashWindows": "71146b4350a01d3805e7ea990eb034e6ef4d53db",
+  "channel": "stable",
+  "platform": "windows32",
+  "distribution": "standard",
+  "archive": "cef_binary_150.0.11+gb887805+chromium-150.0.7871.115_windows32.tar.bz2",
+  "archiveRoot": "cef_binary_150.0.11+gb887805+chromium-150.0.7871.115_windows32",
+  "url": "https://cef-builds.spotifycdn.com/cef_binary_150.0.11%2Bgb887805%2Bchromium-150.0.7871.115_windows32.tar.bz2",
+  "size": 282303880,
+  "sha1": "419865ba13eb2dd668778ec0cfa3f02bfa389342",
+  "sha256": "03b6b34328ef943d04bbd06479b097de4046e89439ae2d6122d0e95e517a7909"
+}
