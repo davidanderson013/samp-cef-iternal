@@ -530,7 +530,29 @@ fn resolve_relative_local_path(path: &Path) -> Option<PathBuf> {
 fn file_path_to_asset_url(
     path: &Path, query: Option<&str>, fragment: Option<&str>,
 ) -> Option<String> {
-    let root = fs::canonicalize(crate::utils::assets_dir()).ok()?;
+    // Content now normally comes from the in-memory encrypted bundle
+    // (asset_bundle.rs), not from files on disk, so cef/assets/ is often
+    // empty or was never created yet (e.g. first launch after a migration
+    // script moved/removed it while the game was closed). canonicalize()
+    // fails outright on a missing directory, which would otherwise block
+    // every single asset path as "outside assets directory" and blank the
+    // whole UI. App::new() already creates this directory on startup, but
+    // we don't rely on init order here: create it defensively on first use
+    // too, so a stale/empty directory never breaks path resolution.
+    if !crate::utils::assets_dir().exists() {
+        let _ = fs::create_dir_all(crate::utils::assets_dir());
+    }
+    let root = match fs::canonicalize(crate::utils::assets_dir()) {
+        Ok(root) => root,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                assets_dir = %crate::utils::assets_dir().display(),
+                "cannot canonicalize assets directory; blocking asset path"
+            );
+            return None;
+        }
+    };
     let normalized = normalize_path(path)?;
     let secured = canonicalize_with_missing_tail(&normalized)?;
     let relative = secured.strip_prefix(&root).ok()?;
