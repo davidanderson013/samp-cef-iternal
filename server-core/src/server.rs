@@ -181,6 +181,15 @@ impl Server {
 
         if !bundle_required {
             let _ = self.event_tx.send(ServerEvent::PlayerConnected(player_id));
+        } else {
+            // The normal "connected within 5s" safety net doesn't apply
+            // once we're waiting on a UI bundle handshake that can
+            // legitimately take much longer (first-time download of a
+            // multi-MB bundle over a slow link) — our own, much longer
+            // ASSET_BUNDLE_TIMEOUT below is what actually bounds the wait.
+            let _ = self
+                .event_tx
+                .send(ServerEvent::SuspendInitTimeout(player_id));
         }
 
         let _ = try_into_packet(response).map(|bytes| {
@@ -225,7 +234,9 @@ impl Server {
         let player_id = client.id();
 
         trace!(?peer, player_id, "CEF UI asset bundle ready on client");
-        let _ = self.event_tx.send(ServerEvent::PlayerConnected(player_id));
+        let _ = self
+            .event_tx
+            .send(ServerEvent::PlayerInitializedSuccess(player_id));
     }
 
     /// Fail-open safety net: if a client never sends ASSET_BUNDLE_READY
@@ -259,7 +270,9 @@ impl Server {
                  an outdated client build?)"
             );
 
-            let _ = self.event_tx.send(ServerEvent::PlayerConnected(player_id));
+            let _ = self
+                .event_tx
+                .send(ServerEvent::PlayerInitializedSuccess(player_id));
         }
     }
 

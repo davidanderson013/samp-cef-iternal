@@ -78,6 +78,22 @@ pub(crate) enum ServerEvent {
         arguments: String,
     },
     PlayerConnected(i32),
+    /// Sent as soon as a join is accepted but the gamemode's "player is
+    /// CEF-connected" notification is going to be gated behind the UI
+    /// bundle handshake instead of firing immediately. Cancels the
+    /// pre-existing `INIT_TIMEOUT` safety net for this player, since that
+    /// 5-second window predates the bundle feature and is far shorter
+    /// than a bundle download can legitimately take — without this, every
+    /// bundle-gated connect would spuriously time out as a failure before
+    /// the real (up to `ASSET_BUNDLE_TIMEOUT`-long) wait even finishes.
+    SuspendInitTimeout(i32),
+    /// Unconditionally reports a successful CEF connect, bypassing the
+    /// `await_connect`/`INIT_TIMEOUT` bookkeeping entirely. Used once the
+    /// UI bundle handshake actually resolves (ready, or fail-open
+    /// timeout) — by that point `SuspendInitTimeout` has already taken
+    /// this player out of the short-timeout path, so `PlayerConnected`'s
+    /// "only fire if still pending" guard would otherwise just drop it.
+    PlayerInitializedSuccess(i32),
     BrowserCreated {
         player_id: i32,
         browser_id: u32,
@@ -318,6 +334,24 @@ impl ServerCore {
                             success: true,
                         });
                     }
+                }
+
+                ServerEvent::SuspendInitTimeout(player_id) => {
+                    trace!("poll_event::SuspendInitTimeout({})", player_id);
+                    // Take this player out of the short INIT_TIMEOUT window;
+                    // a PlayerInitializedSuccess (or the gamemode simply
+                    // never hearing back, if the player disconnects first)
+                    // is what resolves them from here on.
+                    self.await_connect.remove(&player_id);
+                }
+
+                ServerEvent::PlayerInitializedSuccess(player_id) => {
+                    trace!("poll_event::PlayerInitializedSuccess({})", player_id);
+                    self.await_connect.remove(&player_id);
+                    self.pending_events.push_back(CoreEvent::PlayerInitialized {
+                        player_id,
+                        success: true,
+                    });
                 }
 
                 ServerEvent::BrowserCreated {
