@@ -691,9 +691,9 @@ impl Manager {
     fn temporary_hide(&self, hide: bool) {
         for client in self.clients.values() {
             if hide {
-                client.internal_hide(true, true);
+                client.suppress_draw(true);
             } else {
-                client.restore_hide_status();
+                client.suppress_draw(false);
 
                 if let Some(host) = client.browser().map(|browser| browser.host()) {
                     host.invalidate(PaintElement::View);

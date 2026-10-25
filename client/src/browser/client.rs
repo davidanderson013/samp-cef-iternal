@@ -91,7 +91,9 @@ pub struct WebClient {
     id: u32, // static
     is_extern: bool,
     hidden: AtomicBool,
-    prev_hidden_flag: AtomicBool,
+    user_hidden: AtomicBool,   // keinginan server (hide_browser)
+    sup_lost: AtomicBool,      // ditekan sementara: D3D device hilang
+    sup_draw: AtomicBool,      // ditekan sementara: window tidak aktif / menu game
     closing: AtomicBool,
     listen_keys: AtomicBool,
     pub view: Mutex<View>,
@@ -120,7 +122,7 @@ impl LifespanHandler for WebClientRef {
             *br = Some(browser);
         }
 
-        let hidden = self.0.hidden.load(Ordering::SeqCst);
+        let hidden = self.0.user_hidden.load(Ordering::SeqCst);
 
         tracing::debug!(browser = self.0.id, hidden, "CEF browser instance created");
 
@@ -479,7 +481,9 @@ impl WebClient {
 
         let client = WebClient {
             hidden: AtomicBool::new(false),
-            prev_hidden_flag: AtomicBool::new(false),
+            user_hidden: AtomicBool::new(false),
+            sup_lost: AtomicBool::new(false),
+            sup_draw: AtomicBool::new(false),
             closing: AtomicBool::new(false),
             listen_keys: AtomicBool::new(false),
             view: Mutex::new(view),
@@ -505,7 +509,9 @@ impl WebClient {
 
         let client = WebClient {
             hidden: AtomicBool::new(false),
-            prev_hidden_flag: AtomicBool::new(false),
+            user_hidden: AtomicBool::new(false),
+            sup_lost: AtomicBool::new(false),
+            sup_draw: AtomicBool::new(false),
             closing: AtomicBool::new(false),
             listen_keys: AtomicBool::new(false),
             view: Mutex::new(view),
@@ -531,7 +537,7 @@ impl WebClient {
 
     #[inline]
     pub fn on_lost_device(&self) {
-        self.internal_hide(true, true); // hide browser but do not save value
+        self.suppress_lost(true);
 
         {
             let mut texture = self.view.lock();
@@ -556,7 +562,7 @@ impl WebClient {
             }
         }
 
-        self.restore_hide_status();
+        self.suppress_lost(false);
     }
 
     #[inline]
@@ -646,16 +652,29 @@ impl WebClient {
     }
 
     pub fn hide(&self, hide: bool) {
-        self.internal_hide(hide, false);
+        self.user_hidden.store(hide, Ordering::SeqCst);
+        self.apply_hidden();
     }
 
-    pub fn internal_hide(&self, hide: bool, update_prev: bool) {
-        if update_prev {
-            let cur = self.hidden.load(Ordering::SeqCst);
-            self.prev_hidden_flag.store(cur, Ordering::SeqCst);
-        }
+    pub fn suppress_lost(&self, on: bool) {
+        self.sup_lost.store(on, Ordering::SeqCst);
+        self.apply_hidden();
+    }
 
-        self.hidden.store(hide, Ordering::SeqCst);
+    pub fn suppress_draw(&self, on: bool) {
+        self.sup_draw.store(on, Ordering::SeqCst);
+        self.apply_hidden();
+    }
+
+    /// Status tampil efektif = permintaan server ATAU penekanan sementara (alt-tab / device lost).
+    /// Permintaan server tidak pernah tertimpa oleh penekanan sementara, jadi browser yang
+    /// disembunyikan server tidak bisa muncul sendiri setelah alt-tab (dan sebaliknya).
+    fn apply_hidden(&self) {
+        let hide = self.user_hidden.load(Ordering::SeqCst)
+            || self.sup_lost.load(Ordering::SeqCst)
+            || self.sup_draw.load(Ordering::SeqCst);
+
+        let was = self.hidden.swap(hide, Ordering::SeqCst);
 
         if let Some(host) = self.browser().map(|browser| browser.host()) {
             if hide {
@@ -669,13 +688,13 @@ impl WebClient {
             }
         }
 
-        if !self.is_extern() {
+        if !self.is_extern() && was != hide {
             self.set_audio_muted(hide);
         }
     }
 
     pub fn restore_hide_status(&self) {
-        self.internal_hide(self.prev_hidden_flag.load(Ordering::SeqCst), false);
+        self.apply_hidden();
     }
 
     pub fn set_audio_muted(&self, muted: bool) {
